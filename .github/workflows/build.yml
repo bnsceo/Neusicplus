@@ -17,23 +17,34 @@ jobs:
       - name: Configure macOS Xcode project
         run: cmake -S . -B build-macos -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
       - name: Build Neusicplus for macOS
+        id: build_macos
         shell: bash
         run: |
           set +e
           cmake --build build-macos --config Release --parallel 2 > build-macos.log 2>&1
           status=$?
+          grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log > build-macos-errors.log || true
           if [ "$status" -ne 0 ]; then
-            echo "Compiler diagnostics:"
-            grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log | tail -120 || tail -120 build-macos.log
+            cat build-macos-errors.log
             exit "$status"
           fi
-          tail -30 build-macos.log
+      - name: Upload macOS compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neusicplus-macOS-build-log
+          path: |
+            build-macos.log
+            build-macos-errors.log
+          retention-days: 3
       - name: Package application
+        if: success()
         run: |
           APP=$(find build-macos -type d -name "Neusicplus.app" | head -1)
           test -n "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" Neusicplus-macOS.zip
       - name: Upload downloadable Mac preview
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Neusicplus-macOS
@@ -54,6 +65,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
       - name: Build Neusicplus for iPhone Simulator
+        id: build_ios
         shell: bash
         run: |
           set +e
@@ -62,9 +74,17 @@ jobs:
             --target Neusicplus \
             -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO > build-ios.log 2>&1
           status=$?
+          grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log > build-ios-errors.log || true
           if [ "$status" -ne 0 ]; then
-            echo "Compiler diagnostics:"
-            grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log | tail -120 || tail -120 build-ios.log
+            cat build-ios-errors.log
             exit "$status"
           fi
-          tail -30 build-ios.log
+      - name: Upload iOS compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neusicplus-iOS-build-log
+          path: |
+            build-ios.log
+            build-ios-errors.log
+          retention-days: 3
