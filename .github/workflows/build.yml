@@ -10,36 +10,42 @@ permissions:
   contents: read
 
 jobs:
-  linux-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install JUCE build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libasound2-dev libjack-jackd2-dev ladspa-sdk libcurl4-openssl-dev libfreetype6-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --parallel 2
-
   macos-app:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Configure Xcode project
-        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-      - name: Build Neusicplus
-        run: cmake --build build --config Release --parallel 2
+      - name: Configure macOS Xcode project
+        run: cmake -S . -B build-macos -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+      - name: Build Neusicplus for macOS
+        run: cmake --build build-macos --config Release --parallel 2
       - name: Package application
         run: |
-          APP=$(find build -type d -name "Neusicplus.app" | head -1)
+          APP=$(find build-macos -type d -name "Neusicplus.app" | head -1)
           test -n "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" Neusicplus-macOS.zip
-      - name: Upload downloadable app
+      - name: Upload downloadable Mac preview
         uses: actions/upload-artifact@v4
         with:
           name: Neusicplus-macOS
           path: Neusicplus-macOS.zip
           retention-days: 14
           if-no-files-found: error
+
+  ios-simulator:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure iOS Simulator project
+        run: |
+          cmake -S . -B build-ios \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+      - name: Build Neusicplus for iPhone Simulator
+        run: |
+          cmake --build build-ios \
+            --config Release \
+            --target Neusicplus \
+            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO
