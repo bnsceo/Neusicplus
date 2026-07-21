@@ -2,31 +2,23 @@
 
 namespace
 {
-constexpr auto background = 0xff0b0f12;
+constexpr auto background = 0xff090d10;
 constexpr auto panel = 0xff151b1f;
+constexpr auto panelAlt = 0xff10161a;
 constexpr auto line = 0xff2b353b;
 constexpr auto text = 0xffedf2f3;
 constexpr auto muted = 0xff87939a;
 constexpr auto amber = 0xffe2a84b;
+constexpr auto cyan = 0xff32e7ff;
 constexpr auto red = 0xffff5c66;
 }
 
 MainComponent::MainComponent()
 {
     setOpaque(true);
-    setSize(430, 820);
+    setSize(980, 720);
 
-    brandLabel.setText("NEUSICPLUS", juce::dontSendNotification);
-    brandLabel.setColour(juce::Label::textColourId, juce::Colour(text));
-    brandLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-    addAndMakeVisible(brandLabel);
-
-    statusLabel.setColour(juce::Label::textColourId, juce::Colour(muted));
-    statusLabel.setJustificationType(juce::Justification::centredRight);
-    statusLabel.setFont(juce::FontOptions(11.0f));
-    addAndMakeVisible(statusLabel);
-
-    auto prepareButton = [this](juce::Button& button)
+    auto prepButton = [this](juce::Button& button)
     {
         button.setColour(juce::TextButton::buttonColourId, juce::Colour(panel));
         button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(amber));
@@ -35,27 +27,80 @@ MainComponent::MainComponent()
         addAndMakeVisible(button);
     };
 
-    for (auto* button : { &rewindButton, &playButton, &recordButton, &arrangeTab, &recordTab, &soundsTab, &mixerTab, &exportTab })
-        prepareButton(*button);
+    brandLabel.setText("NEUSICPLUS", juce::dontSendNotification);
+    brandLabel.setColour(juce::Label::textColourId, juce::Colour(text));
+    brandLabel.setFont(juce::FontOptions(20.0f, juce::Font::bold));
+    addAndMakeVisible(brandLabel);
+
+    statusLabel.setColour(juce::Label::textColourId, juce::Colour(muted));
+    statusLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(statusLabel);
+
+    clockLabel.setText("00:00.0", juce::dontSendNotification);
+    clockLabel.setColour(juce::Label::textColourId, juce::Colour(amber));
+    clockLabel.setJustificationType(juce::Justification::centred);
+    clockLabel.setFont(juce::FontOptions(17.0f, juce::Font::bold));
+    addAndMakeVisible(clockLabel);
+
+    for (auto* button : { &rewindButton, &playButton, &recordButton, &saveButton, &openButton, &exportButton })
+        prepButton(*button);
 
     monitorButton.setColour(juce::ToggleButton::textColourId, juce::Colour(text));
-    monitorButton.setToggleState(true, juce::dontSendNotification);
+    monitorButton.setToggleState(false, juce::dontSendNotification);
     monitorButton.onClick = [this] { audioEngine.setMonitoringEnabled(monitorButton.getToggleState()); };
     addAndMakeVisible(monitorButton);
 
+    rewindButton.onClick = [this] { audioEngine.rewind(); };
+    playButton.onClick = [this] { togglePlayback(); };
     recordButton.onClick = [this] { toggleRecording(); };
-    playButton.onClick = [this]
+    saveButton.onClick = [this] { saveProject(); };
+    openButton.onClick = [this] { openProject(); };
+    exportButton.onClick = [this] { exportMix(); };
+
+    for (int i = 0; i < AudioEngine::trackCount; ++i)
     {
-        playButton.setToggleState(! playButton.getToggleState(), juce::dontSendNotification);
-        playButton.setButtonText(playButton.getToggleState() ? "PAUSE" : "PLAY");
-    };
+        auto& label = trackLabels[(size_t) i];
+        label.setColour(juce::Label::textColourId, juce::Colour(text));
+        label.setText("Track " + juce::String(i + 1), juce::dontSendNotification);
+        addAndMakeVisible(label);
 
-    arrangeTab.setToggleState(true, juce::dontSendNotification);
+        auto& import = importButtons[(size_t) i];
+        import.setButtonText("IMPORT");
+        prepButton(import);
+        import.onClick = [this, i] { chooseAudioForTrack(i); };
+
+        auto setupSlider = [this](juce::Slider& slider, double min, double max, double value)
+        {
+            slider.setRange(min, max, 0.01);
+            slider.setValue(value, juce::dontSendNotification);
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
+            slider.setColour(juce::Slider::trackColourId, juce::Colour(amber));
+            slider.setColour(juce::Slider::backgroundColourId, juce::Colour(line));
+            slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(text));
+            slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(panelAlt));
+            addAndMakeVisible(slider);
+        };
+
+        setupSlider(gainSliders[(size_t) i], 0.0, 1.5, 0.85);
+        setupSlider(panSliders[(size_t) i], -1.0, 1.0, 0.0);
+        gainSliders[(size_t) i].onValueChange = [this, i] { audioEngine.setTrackGain(i, (float) gainSliders[(size_t) i].getValue()); };
+        panSliders[(size_t) i].onValueChange = [this, i] { audioEngine.setTrackPan(i, (float) panSliders[(size_t) i].getValue()); };
+
+        muteButtons[(size_t) i].setButtonText("M");
+        soloButtons[(size_t) i].setButtonText("S");
+        muteButtons[(size_t) i].setColour(juce::ToggleButton::textColourId, juce::Colour(text));
+        soloButtons[(size_t) i].setColour(juce::ToggleButton::textColourId, juce::Colour(text));
+        addAndMakeVisible(muteButtons[(size_t) i]);
+        addAndMakeVisible(soloButtons[(size_t) i]);
+        muteButtons[(size_t) i].onClick = [this, i] { audioEngine.setTrackMuted(i, muteButtons[(size_t) i].getToggleState()); timeline.repaint(); };
+        soloButtons[(size_t) i].onClick = [this, i] { audioEngine.setTrackSolo(i, soloButtons[(size_t) i].getToggleState()); timeline.repaint(); };
+    }
+
     addAndMakeVisible(timeline);
-
     const bool ready = audioEngine.initialise();
     statusLabel.setText(ready ? "AUDIO READY" : "AUDIO ERROR", juce::dontSendNotification);
-    startTimerHz(10);
+    startTimerHz(20);
 }
 
 MainComponent::~MainComponent()
@@ -67,46 +112,68 @@ MainComponent::~MainComponent()
 void MainComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(background));
-    const auto bounds = getLocalBounds().toFloat();
     g.setColour(juce::Colour(line));
-    g.drawLine(0.0f, 58.0f, bounds.getWidth(), 58.0f, 1.0f);
-    g.drawLine(0.0f, 128.0f, bounds.getWidth(), 128.0f, 1.0f);
-    g.drawLine(0.0f, bounds.getHeight() - 70.0f, bounds.getWidth(), bounds.getHeight() - 70.0f, 1.0f);
+    g.drawHorizontalLine(58, 0.0f, (float) getWidth());
+    g.drawHorizontalLine(124, 0.0f, (float) getWidth());
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-    const int padding = juce::jlimit(10, 18, getWidth() / 28);
+    const int pad = juce::jlimit(8, 16, getWidth() / 50);
 
-    auto header = area.removeFromTop(58).reduced(padding, 8);
+    auto header = area.removeFromTop(58).reduced(pad, 7);
     brandLabel.setBounds(header.removeFromLeft(190));
     statusLabel.setBounds(header);
 
-    auto transport = area.removeFromTop(70).reduced(padding, 10);
-    const int gap = 8;
-    const int buttonWidth = juce::jmax(58, (transport.getWidth() - gap * 3) / 4);
-    rewindButton.setBounds(transport.removeFromLeft(buttonWidth));
-    transport.removeFromLeft(gap);
-    playButton.setBounds(transport.removeFromLeft(buttonWidth));
-    transport.removeFromLeft(gap);
-    recordButton.setBounds(transport.removeFromLeft(buttonWidth));
-    transport.removeFromLeft(gap);
-    monitorButton.setBounds(transport);
+    auto transport = area.removeFromTop(66).reduced(pad, 8);
+    const int gap = 6;
+    const int small = 58;
+    rewindButton.setBounds(transport.removeFromLeft(small)); transport.removeFromLeft(gap);
+    playButton.setBounds(transport.removeFromLeft(72)); transport.removeFromLeft(gap);
+    recordButton.setBounds(transport.removeFromLeft(72)); transport.removeFromLeft(gap);
+    monitorButton.setBounds(transport.removeFromLeft(66)); transport.removeFromLeft(gap);
+    clockLabel.setBounds(transport.removeFromLeft(110)); transport.removeFromLeft(gap);
+    saveButton.setBounds(transport.removeFromLeft(64)); transport.removeFromLeft(gap);
+    openButton.setBounds(transport.removeFromLeft(64)); transport.removeFromLeft(gap);
+    exportButton.setBounds(transport.removeFromLeft(76));
 
-    auto tabs = area.removeFromBottom(70).reduced(padding, 9);
-    const int tabGap = 5;
-    const int tabWidth = (tabs.getWidth() - tabGap * 4) / 5;
-    for (auto* button : { &arrangeTab, &recordTab, &soundsTab, &mixerTab, &exportTab })
+    auto mixer = area.removeFromBottom(230).reduced(pad, 6);
+    const int rowHeight = juce::jmax(48, mixer.getHeight() / AudioEngine::trackCount);
+    for (int i = 0; i < AudioEngine::trackCount; ++i)
     {
-        button->setBounds(tabs.removeFromLeft(tabWidth));
-        tabs.removeFromLeft(tabGap);
+        auto row = mixer.removeFromTop(rowHeight).reduced(4, 4);
+        trackLabels[(size_t) i].setBounds(row.removeFromLeft(150));
+        importButtons[(size_t) i].setBounds(row.removeFromLeft(72)); row.removeFromLeft(5);
+        muteButtons[(size_t) i].setBounds(row.removeFromLeft(42));
+        soloButtons[(size_t) i].setBounds(row.removeFromLeft(42)); row.removeFromLeft(6);
+        const int half = row.getWidth() / 2;
+        gainSliders[(size_t) i].setBounds(row.removeFromLeft(half));
+        panSliders[(size_t) i].setBounds(row);
     }
 
-    timeline.setBounds(area.reduced(padding, 10));
+    timeline.setBounds(area.reduced(pad, 8));
 }
 
-void MainComponent::timerCallback() { updateStatus(); }
+void MainComponent::timerCallback()
+{
+    updateStatus();
+    timeline.repaint();
+}
+
+void MainComponent::togglePlayback()
+{
+    if (audioEngine.isPlaying())
+    {
+        audioEngine.pause();
+        playButton.setButtonText("PLAY");
+    }
+    else
+    {
+        audioEngine.play();
+        playButton.setButtonText("PAUSE");
+    }
+}
 
 void MainComponent::toggleRecording()
 {
@@ -121,21 +188,69 @@ void MainComponent::toggleRecording()
         recordButton.setButtonText("STOP");
         recordButton.setColour(juce::TextButton::buttonColourId, juce::Colour(red));
     }
-    repaint();
+}
+
+void MainComponent::chooseAudioForTrack(int trackIndex)
+{
+    chooser = std::make_unique<juce::FileChooser>("Import audio", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this, trackIndex](const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file.existsAsFile() && audioEngine.importAudio(trackIndex, file))
+                refreshTrackLabels();
+        });
+}
+
+void MainComponent::saveProject()
+{
+    chooser = std::make_unique<juce::FileChooser>("Save Neusicplus project", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("NeusicplusProject.json"), "*.json");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc) { auto f = fc.getResult(); if (f.getFileExtension().isEmpty()) f = f.withFileExtension("json"); audioEngine.saveProject(f); });
+}
+
+void MainComponent::openProject()
+{
+    chooser = std::make_unique<juce::FileChooser>("Open Neusicplus project", juce::File(), "*.json");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc) { if (audioEngine.loadProject(fc.getResult())) refreshTrackLabels(); });
+}
+
+void MainComponent::exportMix()
+{
+    chooser = std::make_unique<juce::FileChooser>("Export stereo mix", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("NeusicplusMix.wav"), "*.wav");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc) { auto f = fc.getResult(); if (f.getFileExtension().isEmpty()) f = f.withFileExtension("wav"); audioEngine.exportMix(f); });
+}
+
+void MainComponent::refreshTrackLabels()
+{
+    for (int i = 0; i < AudioEngine::trackCount; ++i)
+    {
+        const auto s = audioEngine.getTrackState(i);
+        trackLabels[(size_t) i].setText(s.name + (s.file.existsAsFile() ? "  •  " + juce::String(s.lengthSeconds, 1) + "s" : ""), juce::dontSendNotification);
+        gainSliders[(size_t) i].setValue(s.gain, juce::dontSendNotification);
+        panSliders[(size_t) i].setValue(s.pan, juce::dontSendNotification);
+        muteButtons[(size_t) i].setToggleState(s.muted, juce::dontSendNotification);
+        soloButtons[(size_t) i].setToggleState(s.solo, juce::dontSendNotification);
+    }
+    timeline.repaint();
 }
 
 void MainComponent::updateStatus()
 {
-    if (audioEngine.isRecording())
-    {
-        statusLabel.setText("RECORDING", juce::dontSendNotification);
-        return;
-    }
+    const auto pos = audioEngine.getPosition();
+    const int minutes = (int) pos / 60;
+    const double seconds = pos - minutes * 60;
+    clockLabel.setText(juce::String::formatted("%02d:%04.1f", minutes, seconds), juce::dontSendNotification);
 
-    const auto rate = static_cast<int>(audioEngine.getCurrentSampleRate());
-    const auto buffer = audioEngine.getCurrentBufferSize();
-    statusLabel.setText(rate > 0 ? juce::String(rate) + " HZ / " + juce::String(buffer) : "AUDIO OFFLINE",
-                        juce::dontSendNotification);
+    if (audioEngine.isRecording())
+        statusLabel.setText("RECORDING", juce::dontSendNotification);
+    else
+    {
+        const auto rate = (int) audioEngine.getCurrentSampleRate();
+        statusLabel.setText(rate > 0 ? juce::String(rate) + " HZ / " + juce::String(audioEngine.getCurrentBufferSize()) : "AUDIO OFFLINE", juce::dontSendNotification);
+    }
 }
 
 void MainComponent::TimelineView::paint(juce::Graphics& g)
@@ -144,39 +259,41 @@ void MainComponent::TimelineView::paint(juce::Graphics& g)
     g.setColour(juce::Colour(line));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 8.0f, 1.0f);
 
-    const auto bounds = getLocalBounds().reduced(12);
+    auto bounds = getLocalBounds().reduced(12);
     const int rulerHeight = 28;
-    const int trackHeight = juce::jmax(58, (bounds.getHeight() - rulerHeight - 30) / 4);
+    const int trackHeight = juce::jmax(44, (bounds.getHeight() - rulerHeight) / AudioEngine::trackCount);
+    const double projectLength = juce::jmax(1.0, engine.getProjectLength());
 
     g.setColour(juce::Colour(muted));
     g.setFont(10.0f);
-    for (int beat = 0; beat < 9; ++beat)
+    for (int marker = 0; marker <= 8; ++marker)
     {
-        const auto x = bounds.getX() + beat * bounds.getWidth() / 8;
-        g.drawVerticalLine(x, static_cast<float>(bounds.getY()), static_cast<float>(bounds.getBottom()));
-        if (beat < 8)
-            g.drawText(juce::String(beat + 1), x + 4, bounds.getY(), 22, rulerHeight, juce::Justification::centredLeft);
+        const int x = bounds.getX() + marker * bounds.getWidth() / 8;
+        g.drawVerticalLine(x, (float) bounds.getY(), (float) bounds.getBottom());
+        g.drawText(juce::String(projectLength * marker / 8.0, 1) + "s", x + 3, bounds.getY(), 45, rulerHeight, juce::Justification::centredLeft);
     }
 
-    for (int track = 0; track < 4; ++track)
+    for (int i = 0; i < AudioEngine::trackCount; ++i)
     {
-        const int y = bounds.getY() + rulerHeight + track * trackHeight;
-        auto trackArea = juce::Rectangle<int>(bounds.getX(), y, bounds.getWidth(), trackHeight - 6);
-        g.setColour(juce::Colour(track % 2 == 0 ? 0xff10161a : 0xff0e1316));
-        g.fillRoundedRectangle(trackArea.toFloat(), 5.0f);
-        g.setColour(juce::Colour(line));
-        g.drawRoundedRectangle(trackArea.toFloat(), 5.0f, 1.0f);
-        g.setColour(juce::Colour(text));
-        g.drawText("TRACK " + juce::String(track + 1), trackArea.removeFromLeft(72), juce::Justification::centred);
-
-        if (track < 2)
+        const int y = bounds.getY() + rulerHeight + i * trackHeight;
+        auto row = juce::Rectangle<int>(bounds.getX(), y, bounds.getWidth(), trackHeight - 5);
+        g.setColour(juce::Colour(i % 2 == 0 ? panelAlt : background));
+        g.fillRoundedRectangle(row.toFloat(), 5.0f);
+        const auto state = engine.getTrackState(i);
+        if (state.file.existsAsFile())
         {
-            auto clip = trackArea.reduced(8, 10);
-            clip.setWidth(juce::jmax(80, clip.getWidth() * (track == 0 ? 2 : 1) / 3));
-            g.setColour(juce::Colour(track == 0 ? amber : 0xff32e7ff).withAlpha(0.24f));
+            auto clip = row.reduced(6, 8);
+            clip.setWidth((int) juce::jlimit(20.0, (double) clip.getWidth(), clip.getWidth() * state.lengthSeconds / projectLength));
+            const auto colour = i % 2 == 0 ? juce::Colour(amber) : juce::Colour(cyan);
+            g.setColour(colour.withAlpha(0.22f));
             g.fillRoundedRectangle(clip.toFloat(), 4.0f);
-            g.setColour(juce::Colour(track == 0 ? amber : 0xff32e7ff));
+            g.setColour(colour);
             g.drawRoundedRectangle(clip.toFloat(), 4.0f, 1.0f);
+            g.drawText(state.name, clip.reduced(8, 0), juce::Justification::centredLeft);
         }
     }
+
+    const int playheadX = bounds.getX() + (int) (bounds.getWidth() * juce::jlimit(0.0, 1.0, engine.getPosition() / projectLength));
+    g.setColour(juce::Colour(red));
+    g.drawVerticalLine(playheadX, (float) bounds.getY(), (float) bounds.getBottom());
 }
