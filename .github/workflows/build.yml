@@ -20,14 +20,14 @@ jobs:
         shell: bash
         run: |
           set +e
-          cmake --build build-macos --config Release --parallel 2 2>&1 | tee build-macos.log
-          status=${PIPESTATUS[0]}
+          cmake --build build-macos --config Release --parallel 2 > build-macos.log 2>&1
+          status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::group::Compiler errors"
-            grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log | tail -120 || true
-            echo "::endgroup::"
+            echo "Compiler diagnostics:"
+            grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log | tail -120 || tail -120 build-macos.log
             exit "$status"
           fi
+          tail -30 build-macos.log
       - name: Package application
         run: |
           APP=$(find build-macos -type d -name "Neusicplus.app" | head -1)
@@ -60,11 +60,11 @@ jobs:
           cmake --build build-ios \
             --config Release \
             --target Neusicplus \
-            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO 2>&1 | tee build-ios.log
-          status=${PIPESTATUS[0]}
+            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO > build-ios.log 2>&1
+          status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::group::Compiler errors"
-            grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log | tail -120 || true
-            echo "::endgroup::"
+            echo "Compiler diagnostics:"
+            grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log | tail -120 || tail -120 build-ios.log
             exit "$status"
           fi
+          tail -30 build-ios.log
