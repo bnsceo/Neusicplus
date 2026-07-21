@@ -17,7 +17,17 @@ jobs:
       - name: Configure macOS Xcode project
         run: cmake -S . -B build-macos -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
       - name: Build Neusicplus for macOS
-        run: cmake --build build-macos --config Release --parallel 2
+        shell: bash
+        run: |
+          set +e
+          cmake --build build-macos --config Release --parallel 2 2>&1 | tee build-macos.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Compiler errors"
+            grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log | tail -120 || true
+            echo "::endgroup::"
+            exit "$status"
+          fi
       - name: Package application
         run: |
           APP=$(find build-macos -type d -name "Neusicplus.app" | head -1)
@@ -44,8 +54,17 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
       - name: Build Neusicplus for iPhone Simulator
+        shell: bash
         run: |
+          set +e
           cmake --build build-ios \
             --config Release \
             --target Neusicplus \
-            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO
+            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO 2>&1 | tee build-ios.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Compiler errors"
+            grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log | tail -120 || true
+            echo "::endgroup::"
+            exit "$status"
+          fi
