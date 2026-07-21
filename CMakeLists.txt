@@ -38,6 +38,16 @@ target_compile_definitions(Neusicplus PRIVATE
     JUCE_APPLICATION_VERSION_STRING="${PROJECT_VERSION}"
 )
 
+if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set_target_properties(Neusicplus PROPERTIES
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.neusicwave.neusicplus"
+        XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST "NO"
+    )
+endif()
+
 target_link_libraries(Neusicplus PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
