@@ -23,6 +23,8 @@ juce_add_gui_app(Neusicplus
     MICROPHONE_PERMISSION_TEXT "Neusicplus needs microphone access to record audio."
 )
 
+juce_generate_juce_header(Neusicplus)
+
 target_sources(Neusicplus PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
