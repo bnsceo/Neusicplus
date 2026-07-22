@@ -10,34 +10,81 @@ permissions:
   contents: read
 
 jobs:
-  linux-build:
-    runs-on: ubuntu-latest
+  macos-app:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install JUCE build dependencies
+      - name: Configure macOS Xcode project
+        run: cmake -S . -B build-macos -G Xcode -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+      - name: Build Neusicplus for macOS
+        id: build_macos
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build \
-            libasound2-dev \
-            libjack-jackd2-dev \
-            ladspa-sdk \
-            libcurl4-openssl-dev \
-            libfreetype6-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            libwebkit2gtk-4.1-dev \
-            libglu1-mesa-dev \
-            mesa-common-dev
+          set +e
+          cmake --build build-macos --config Release --parallel 2 > build-macos.log 2>&1
+          status=$?
+          grep -nE "error:|fatal error:|undefined symbol|ld:" build-macos.log > build-macos-errors.log || true
+          if [ "$status" -ne 0 ]; then
+            cat build-macos-errors.log
+            exit "$status"
+          fi
+      - name: Upload macOS compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neusicplus-macOS-build-log
+          path: |
+            build-macos.log
+            build-macos-errors.log
+          retention-days: 3
+      - name: Package application
+        if: success()
+        run: |
+          APP=$(find build-macos -type d -name "Neusicplus.app" | head -1)
+          test -n "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Neusicplus-macOS.zip
+      - name: Upload downloadable Mac preview
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neusicplus-macOS
+          path: Neusicplus-macOS.zip
+          retention-days: 14
+          if-no-files-found: error
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: cmake --build build --parallel 2
+  ios-simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure iOS Simulator project
+        run: |
+          cmake -S . -B build-ios \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+      - name: Build Neusicplus for iPhone Simulator
+        id: build_ios
+        shell: bash
+        run: |
+          set +e
+          cmake --build build-ios \
+            --config Release \
+            --target Neusicplus \
+            -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO > build-ios.log 2>&1
+          status=$?
+          grep -nE "error:|fatal error:|undefined symbol|ld:" build-ios.log > build-ios-errors.log || true
+          if [ "$status" -ne 0 ]; then
+            cat build-ios-errors.log
+            exit "$status"
+          fi
+      - name: Upload iOS compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neusicplus-iOS-build-log
+          path: |
+            build-ios.log
+            build-ios-errors.log
+          retention-days: 3
